@@ -128,6 +128,11 @@ export default function App() {
   const [over, setOver]       = useState(false);
   const [keep, setKeep]       = useState(false);
   const touch = useRef<{ x: number; y: number } | null>(null);
+  
+  const [opponentBoard, setOpponentBoard] = useState<Board>(() => makeEmpty());
+  const [opponentAnimKeys, setOpponentAnimKeys] = useState<number[]>(() => Array(16).fill(0));
+  const [opponentConnected, setOpponentConnected] = useState(false);
+  const [waitingForOpponent, setWaitingForOpponent] = useState(true);
 
   const move = useCallback((dir: 'left' | 'right' | 'up' | 'down') => {
     if (over || (won && !keep)) return;
@@ -160,6 +165,31 @@ export default function App() {
       console.log("Conectado ao servidor Socket.IO!");
     });
 
+    socket.on("waiting", () => {
+      setWaitingForOpponent(true);
+      setOpponentConnected(false);
+    });
+
+    socket.on("opponent_connected", () => {
+      setWaitingForOpponent(false);
+      setOpponentConnected(true);
+      setOpponentBoard(makeEmpty());
+      setOpponentAnimKeys(Array(16).fill(0));
+      console.log("Opponent connected!");
+    });
+
+    socket.on("opponent_gameboard", (data: { gameboard: Board }) => {
+      setOpponentBoard(data.gameboard);
+    });
+
+    socket.on("opponent_disconnected", () => {
+      setOpponentConnected(false);
+      setWaitingForOpponent(true);
+      setOpponentBoard(makeEmpty());
+      setOpponentAnimKeys(Array(16).fill(0));
+      console.log("Opponent disconnected!");
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -178,6 +208,80 @@ export default function App() {
 
   const showOverlay = over || (won && !keep);
   const flat = board.flat();
+  const opponentFlat = opponentBoard.flat();
+
+  const boardComponent = (boardData: number[], animKeys: number[], isOpponent: boolean = false) => (
+    <div style={{
+      position: 'relative',
+      borderRadius: 22,
+      padding: 12,
+      background: 'rgba(9,43,90,0.35)',
+      backdropFilter: 'blur(28px)',
+      border: '1px solid rgba(158,209,183,0.13)',
+      boxShadow: [
+        '0 32px 80px rgba(9,43,90,0.6)',
+        '0 8px 24px rgba(9,43,90,0.4)',
+        'inset 0 1px 0 rgba(231,217,180,0.08)',
+        'inset 0 -1px 0 rgba(9,43,90,0.5)',
+      ].join(', '),
+    }}>
+      {/* Cell grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+        {boardData.map((value, i) => {
+          const ts = tileStyle(value);
+          return (
+            <div
+              key={`${i}-${animKeys[i]}`}
+              className={value > 0 ? 'tile-pop' : ''}
+              style={{
+                width: 72, height: 72,
+                borderRadius: 13,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: ts.bg,
+                color: ts.fg,
+                fontWeight: 900,
+                fontSize: tileFont(value),
+                userSelect: 'none',
+                boxShadow: ts.glow
+                  ? `0 0 24px ${ts.glow}, 0 4px 14px rgba(0,0,0,0.22)`
+                  : '0 4px 14px rgba(0,0,0,0.14)',
+                transition: 'background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Shine on higher tiles */}
+              {value >= 64 && (
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0,
+                  height: '40%', borderRadius: '13px 13px 0 0',
+                  background: 'linear-gradient(180deg,rgba(255,255,255,0.08),transparent)',
+                  pointerEvents: 'none',
+                }} />
+              )}
+              {value > 0 ? value : ''}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Opponent disconnected overlay */}
+      {isOpponent && !opponentConnected && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, borderRadius: 22,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(6,22,52,0.85)', backdropFilter: 'blur(10px)',
+          }}
+        >
+          <div style={{ fontSize: '2rem', marginBottom: 6 }}>🔌</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#e7d9b4' }}>
+            {waitingForOpponent ? 'Aguardando Oponente...' : 'Oponente Desconectado'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -207,9 +311,18 @@ export default function App() {
           letter-spacing: 0.04em;
         }
         .btn-glass:hover { background: rgba(9,115,138,0.45); border-color: rgba(158,209,183,0.35); }
+
+        @media (max-width: 900px) {
+          .boards-container {
+            flex-direction: column !important;
+          }
+          .player-section {
+            width: 100% !important;
+          }
+        }
       `}</style>
 
-            {/* Full-screen gradient background */}
+      {/* Full-screen gradient background */}
       <div
         className="size-full flex items-center justify-center"
         style={{
@@ -230,10 +343,10 @@ export default function App() {
           move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, padding: '0 16px', width: '100%', maxWidth: 400 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, padding: '0 16px', width: '100%' }}>
 
           {/* ── Header ── */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%', maxWidth: 340 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%', maxWidth: 900 }}>
             <div>
               <div style={{
                 fontSize: '2.5rem', fontWeight: 900, lineHeight: 1,
@@ -241,7 +354,7 @@ export default function App() {
                 textShadow: '0 3px 20px rgba(9,43,90,0.7), 0 0 50px rgba(9,115,138,0.35)',
               }}>MergeUp</div>
               <div style={{ color: 'rgba(158,209,183,0.75)', fontSize: '0.68rem', marginTop: 2, letterSpacing: '0.05em' }}>
-                Combine os blocos!
+                Multiplayer • Combine os blocos!
               </div>
             </div>
 
@@ -260,108 +373,68 @@ export default function App() {
             </div>
           </div>
 
-          {/* ── Board ── */}
-          <div style={{
-            position: 'relative',
-            borderRadius: 22,
-            padding: 12,
-            background: 'rgba(9,43,90,0.35)',
-            backdropFilter: 'blur(28px)',
-            border: '1px solid rgba(158,209,183,0.13)',
-            boxShadow: [
-              '0 32px 80px rgba(9,43,90,0.6)',
-              '0 8px 24px rgba(9,43,90,0.4)',
-              'inset 0 1px 0 rgba(231,217,180,0.08)',
-              'inset 0 -1px 0 rgba(9,43,90,0.5)',
-            ].join(', '),
-          }}>
+          {/* ── Game Boards Container ── */}
+          <div className="boards-container" style={{ display: 'flex', gap: 32, width: '100%', maxWidth: 1000, justifyContent: 'center' }}>
+            
+            {/* Left: Player Board */}
+            <div className="player-section" style={{ width: 'fit-content', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#e7d9b4', letterSpacing: '0.05em' }}>VOCÊ</div>
+              {boardComponent(flat, animKeys, false)}
 
-            {/* Cell grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-              {flat.map((value, i) => {
-                const ts = tileStyle(value);
-                return (
-                  <div
-                    key={`${i}-${animKeys[i]}`}
-                    className={value > 0 ? 'tile-pop' : ''}
-                    style={{
-                      width: 72, height: 72,
-                      borderRadius: 13,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: ts.bg,
-                      color: ts.fg,
-                      fontWeight: 900,
-                      fontSize: tileFont(value),
-                      userSelect: 'none',
-                      boxShadow: ts.glow
-                        ? `0 0 24px ${ts.glow}, 0 4px 14px rgba(0,0,0,0.22)`
-                        : '0 4px 14px rgba(0,0,0,0.14)',
-                      transition: 'background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {/* Shine on higher tiles */}
-                    {value >= 64 && (
-                      <div style={{
-                        position: 'absolute', top: 0, left: 0, right: 0,
-                        height: '40%', borderRadius: '13px 13px 0 0',
-                        background: 'linear-gradient(180deg,rgba(255,255,255,0.08),transparent)',
-                        pointerEvents: 'none',
-                      }} />
-                    )}
-                    {value > 0 ? value : ''}
+              {/* ── Win / Game Over Overlay ── */}
+              {showOverlay && (
+                <div
+                  className="overlay-in"
+                  style={{
+                    position: 'absolute', marginTop: 12,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    background: 'rgba(6,22,52,0.9)', backdropFilter: 'blur(10px)',
+                    borderRadius: 22, padding: 24,
+                  }}
+                >
+                  <div style={{
+                    fontSize: won && !over ? '3rem' : '2.2rem',
+                    marginBottom: 2,
+                    filter: won && !over ? 'drop-shadow(0 0 18px rgba(231,217,180,0.6))' : 'none',
+                  }}>
+                    {won && !over ? '✨' : '😔'}
                   </div>
-                );
-              })}
-            </div>
-
-            {/* ── Win / Game Over Overlay ── */}
-            {showOverlay && (
-              <div
-                className="overlay-in"
-                style={{
-                  position: 'absolute', inset: 0, borderRadius: 22,
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  background: 'rgba(6,22,52,0.9)', backdropFilter: 'blur(10px)',
-                }}
-              >
-                <div style={{
-                  fontSize: won && !over ? '3rem' : '2.2rem',
-                  marginBottom: 2,
-                  filter: won && !over ? 'drop-shadow(0 0 18px rgba(231,217,180,0.6))' : 'none',
-                }}>
-                  {won && !over ? '✨' : '😔'}
-                </div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#e7d9b4' }}>
-                  {won && !over ? 'Você Ganhou!' : 'Game Over!'}
-                </div>
-                <div style={{ color: '#78a890', fontSize: '0.85rem' }}>Pontuação: {score}</div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                  {won && !over && (
+                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#e7d9b4' }}>
+                    {won && !over ? 'Você Ganhou!' : 'Game Over!'}
+                  </div>
+                  <div style={{ color: '#78a890', fontSize: '0.85rem' }}>Pontuação: {score}</div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                    {won && !over && (
+                      <button
+                        onClick={() => setKeep(true)}
+                        style={{
+                          padding: '9px 20px', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem',
+                          background: '#09738a', color: '#e7d9b4', border: 'none', cursor: 'pointer',
+                          boxShadow: '0 0 18px rgba(9,115,138,0.5)',
+                        }}
+                      >
+                        Continuar
+                      </button>
+                    )}
                     <button
-                      onClick={() => setKeep(true)}
+                      onClick={reset}
                       style={{
                         padding: '9px 20px', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem',
-                        background: '#09738a', color: '#e7d9b4', border: 'none', cursor: 'pointer',
-                        boxShadow: '0 0 18px rgba(9,115,138,0.5)',
+                        background: '#e7d9b4', color: '#092b5a', border: 'none', cursor: 'pointer',
                       }}
                     >
-                      Continuar
+                      Novo Jogo
                     </button>
-                  )}
-                  <button
-                    onClick={reset}
-                    style={{
-                      padding: '9px 20px', borderRadius: 10, fontWeight: 700, fontSize: '0.85rem',
-                      background: '#e7d9b4', color: '#092b5a', border: 'none', cursor: 'pointer',
-                    }}
-                  >
-                    Novo Jogo
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* Right: Opponent Board */}
+            <div className="player-section" style={{ width: 'fit-content', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#9ed1b7', letterSpacing: '0.05em' }}>OPONENTE</div>
+              {boardComponent(opponentFlat, opponentAnimKeys, true)}
+            </div>
           </div>
 
           {/* ── New Game button ── */}
