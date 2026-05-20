@@ -67,8 +67,6 @@ function applyShift(board: Board, dir: 'left' | 'right' | 'up' | 'down'): { boar
   else if (dir === 'up') res = tp(res);
   else if (dir === 'down') res = tp(rv(res));
 
-  socket.emit("gameboard", board);
-
   return { board: res, pts };
 }
 
@@ -149,6 +147,9 @@ export default function App() {
       setScore(s => { const ns = s + pts; setBest(b => Math.max(b, ns)); return ns; });
       if (!won && placed.some(row => row.some(v => v >= 2048))) setWon(true);
       if (isDead(placed)) setOver(true);
+      
+      socket.emit("gameboard", placed);
+      
       return placed;
     });
   }, [over, won, keep]);
