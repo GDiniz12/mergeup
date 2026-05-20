@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getRoomConfig, type RoomConfig } from '@/utils/generateRoomId';
 
 // ─── Game Logic ───────────────────────────────────────────────
 
@@ -117,7 +118,14 @@ const tileFont = (v: number): string => {
 
 let socket: Socket;
 
-export default function App() {
+interface PageProps {
+  params: {
+    id: string;
+  };
+}
+
+export default function App({ params }: PageProps) {
+  const roomId = params.id;
   const [board, setBoard]     = useState<Board>(() => init().board);
   const [animKeys, setAnimKeys] = useState<number[]>(() => init().keys);
   const [score, setScore]     = useState(0);
@@ -131,6 +139,8 @@ export default function App() {
   const [opponentAnimKeys, setOpponentAnimKeys] = useState<number[]>(() => Array(16).fill(0));
   const [opponentConnected, setOpponentConnected] = useState(false);
   const [waitingForOpponent, setWaitingForOpponent] = useState(true);
+  const [roomConfig, setRoomConfig] = useState<RoomConfig | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const move = useCallback((dir: 'left' | 'right' | 'up' | 'down') => {
     if (over || (won && !keep)) return;
@@ -159,8 +169,23 @@ export default function App() {
     setBoard(b); setAnimKeys(keys); setScore(0); setWon(false); setOver(false); setKeep(false);
   };
 
+  const copyRoomLink = () => {
+    const link = `${window.location.origin}/game/${roomId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   useEffect(() => {
-    socket = io(process.env.NEXT_PUBLIC_API_URL);
+    const config = getRoomConfig(roomId);
+    setRoomConfig(config);
+  }, [roomId]);
+
+  useEffect(() => {
+    socket = io(process.env.NEXT_PUBLIC_API_URL, {
+      query: { roomId }
+    });
 
     socket.on("connect", () => {
       console.log("Conectado ao servidor Socket.IO!");
@@ -194,7 +219,7 @@ export default function App() {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [roomId]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -347,7 +372,7 @@ export default function App() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, padding: '0 16px', width: '100%' }}>
 
           {/* ── Header ── */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%', maxWidth: 900 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', width: '100%', maxWidth: 900, gap: 20 }}>
             <div>
               <div style={{
                 fontSize: '2.5rem', fontWeight: 900, lineHeight: 1,
@@ -360,6 +385,19 @@ export default function App() {
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={copyRoomLink}
+                className="btn-glass"
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '0.8rem',
+                  background: copied ? 'rgba(9,115,138,0.6)' : 'rgba(9,43,90,0.42)',
+                  transition: 'all 0.3s ease',
+                }}
+              >
+                {copied ? '✓ Copiado!' : '📋 Copiar Link'}
+              </button>
+
               {[{ l: 'PONTOS', v: score }, { l: 'MELHOR', v: best }].map(({ l, v }) => (
                 <div key={l} style={{
                   borderRadius: 14, padding: '8px 14px', textAlign: 'center', minWidth: 68,
@@ -446,6 +484,12 @@ export default function App() {
           <div style={{ color: 'rgba(231,217,180,0.4)', fontSize: '0.68rem', letterSpacing: '0.03em' }}>
             Setas do teclado ou deslize para jogar
           </div>
+
+          {roomConfig && (
+            <div style={{ color: 'rgba(158,209,183,0.6)', fontSize: '0.75rem', marginTop: 8 }}>
+              Sala: {roomId} • Modo: {roomConfig.mode === 'time' ? `Tempo (${roomConfig.timeLimit}s)` : `Pontuação (${roomConfig.scoreTarget})`}
+            </div>
+          )}
         </div>
       </div>
     </>
