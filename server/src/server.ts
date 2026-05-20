@@ -13,8 +13,8 @@ const io = new Server(server, {
 });
 
 io.on("connection", (socket) => {
-  socket.on("gameboard", (msg) => {
-    console.log("Message received: " + msg);
+  socket.on("gameboard", (gameboard: number[][]) => {
+    console.log(gameboard);
   });
 });
 
