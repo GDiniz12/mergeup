@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { io, Socket } from 'socket.io-client';
 
 // ─── Game Logic ───────────────────────────────────────────────
 
@@ -66,6 +67,8 @@ function applyShift(board: Board, dir: 'left' | 'right' | 'up' | 'down'): { boar
   else if (dir === 'up') res = tp(res);
   else if (dir === 'down') res = tp(rv(res));
 
+  socket.emit("gameboard", board);
+
   return { board: res, pts };
 }
 
@@ -114,6 +117,8 @@ const tileFont = (v: number): string => {
 
 // ─── Component ────────────────────────────────────────────────
 
+let socket: Socket;
+
 export default function App() {
   const [board, setBoard]     = useState<Board>(() => init().board);
   const [animKeys, setAnimKeys] = useState<number[]>(() => init().keys);
@@ -147,6 +152,18 @@ export default function App() {
     const { board: b, keys } = init();
     setBoard(b); setAnimKeys(keys); setScore(0); setWon(false); setOver(false); setKeep(false);
   };
+
+  useEffect(() => {
+    socket = io(process.env.NEXT_PUBLIC_API_URL);
+
+    socket.on("connect", () => {
+      console.log("Conectado ao servidor Socket.IO!");
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
