@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { generateRoomId, saveRoomConfig, type RoomConfig } from '@/utils/generateRoomId';
+import { generateRoomId, saveRoomConfig, type RoomConfig } from "../../utils/generateRoomId";
 
 export default function Menu() {
   const router = useRouter();
