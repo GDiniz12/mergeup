@@ -315,7 +315,10 @@ export default function App({ params }: PageProps) {
       setGameState('waiting');
     });
 
-    return () => socket.disconnect();
+    // CORREÇÃO AQUI: Garante o escopo em bloco para retornar void ao TypeScript
+    return () => {
+      socket.disconnect();
+    };
   }, [id, router]);
 
   const submitPassword = () => {
