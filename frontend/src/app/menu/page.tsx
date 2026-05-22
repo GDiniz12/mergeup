@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateRoomId, saveRoomConfig, type RoomConfig } from "../../utils/generateRoomId";
+import Image from "next/image";
+import mergeLogo from "../../../public/mergeuplogo.png";
 
 export default function Menu() {
   const router = useRouter();
@@ -239,7 +241,7 @@ export default function Menu() {
                 marginBottom: 12,
               }}
             >
-              MergeUp
+              <Image src={mergeLogo} alt='logo do mergeup'/>
             </div>
             <div
               style={{
