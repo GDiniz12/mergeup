@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { getRoomConfig, type RoomConfig } from '@/utils/generateRoomId';
 
 // ─── Game Logic ───────────────────────────────────────────────
-
 type Board = number[][];
 
 function makeEmpty(): Board {
@@ -87,7 +86,6 @@ function isDead(b: Board) {
 }
 
 // ─── Tile Design ──────────────────────────────────────────────
-
 interface TileStyle { bg: string; fg: string; glow?: string }
 const TILES: Record<number, TileStyle> = {
   0:    { bg: 'rgba(9,43,90,0.20)', fg: 'transparent' },
@@ -114,14 +112,13 @@ const tileFont = (v: number): string => {
   return '1.5rem';
 };
 
-// ─── Component ────────────────────────────────────────────────
-
 let socket: Socket;
 
 interface PageProps {
   params: Promise<{ id: string }>
 }
 
+// ─── Component ────────────────────────────────────────────────
 export default function App({ params }: PageProps) {
   const router = useRouter();
   const { id } = React.use(params);
@@ -130,35 +127,49 @@ export default function App({ params }: PageProps) {
   const [gameState, setGameState] = useState<'waiting' | 'playing' | 'ended'>('waiting');
   const [endState, setEndState] = useState<{ result: 'win' | 'loss' | 'tie', reason: string } | null>(null);
   
-  // Board Jogador
   const [board, setBoard] = useState<Board>(() => init().board);
   const [animKeys, setAnimKeys] = useState<number[]>(() => init().keys);
   const [score, setScore] = useState(0);
   const [best, setBest] = useState(0);
   
-  // Board Oponente
   const [opponentBoard, setOpponentBoard] = useState<Board>(() => makeEmpty());
   const [opponentAnimKeys, setOpponentAnimKeys] = useState<number[]>(() => Array(16).fill(0));
   const [opponentScore, setOpponentScore] = useState(0);
   
-  // Network/Sala
+  // Refs para Scores (necessários para checagem do timer evitar resets desnecessários no `useEffect`)
+  const scoreRef = useRef(score);
+  const opponentScoreRef = useRef(opponentScore);
+
   const [opponentConnected, setOpponentConnected] = useState(false);
   const [roomConfig, setRoomConfig] = useState<RoomConfig | null>(null);
   const [rematchStatus, setRematchStatus] = useState<'none' | 'voted' | 'opponent_voted' | 'both'>('none');
+  
+  // Estados de Tempo e Senha
+  const [gameEndTime, setGameEndTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [roomPassword, setRoomPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
   const [copied, setCopied] = useState(false);
   const touch = useRef<{ x: number; y: number } | null>(null);
 
+  // Atualiza Refs de Score
+  useEffect(() => {
+    scoreRef.current = score;
+    opponentScoreRef.current = opponentScore;
+  }, [score, opponentScore]);
+
   // Lógica de Movimento
   const move = useCallback((dir: 'left' | 'right' | 'up' | 'down') => {
-    // Paralisar se o jogo não estiver ativamente rodando
     if (gameState !== 'playing') return;
 
     let newScoreVal = score;
     let newBoard = board;
 
     const { board: next, pts } = applyShift(board, dir);
-    if (boardsEq(board, next)) return; // Nada mudou
+    if (boardsEq(board, next)) return;
 
     const { board: placed, idx } = placeRandom(next);
     newBoard = placed;
@@ -172,10 +183,8 @@ export default function App({ params }: PageProps) {
       setAnimKeys(ak => { const n = [...ak]; n[idx]++; return n; });
     }
 
-    // Informa novo board e placar pro oponente
     socket.emit("game_state", { gameboard: placed, score: newScoreVal });
 
-    // Verifica Condições de Derrota (Sem moves) ou Vitória (Atingiu Alvo)
     if (isDead(placed)) {
       setGameState('ended');
       setEndState({ result: 'loss', reason: 'Você ficou sem movimentos!' });
@@ -187,71 +196,80 @@ export default function App({ params }: PageProps) {
     }
   }, [gameState, roomConfig, board, score]);
 
-  // Hook do Timer Progressivo
+  // 🕒 Hook do Timer (Sincronizado)
   useEffect(() => {
-    if (gameState !== 'playing' || !roomConfig || roomConfig.mode !== 'time' || timeLeft === null) return;
+    if (gameState !== 'playing' || !roomConfig || roomConfig.mode !== 'time' || !gameEndTime) return;
 
-    if (timeLeft <= 0) {
-      setGameState('ended');
-      if (score > opponentScore) {
-        setEndState({ result: 'win', reason: 'Tempo esgotado! Você fez mais pontos.' });
-      } else if (score < opponentScore) {
-        setEndState({ result: 'loss', reason: 'Tempo esgotado! O oponente fez mais pontos.' });
-      } else {
-        setEndState({ result: 'tie', reason: 'Tempo esgotado! Empate técnico.' });
+    const updateTimer = () => {
+      const remaining = Math.max(0, Math.ceil((gameEndTime - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining <= 0) {
+        setGameState('ended');
+        const finalScore = scoreRef.current;
+        const finalOppScore = opponentScoreRef.current;
+        
+        if (finalScore > finalOppScore) {
+          setEndState({ result: 'win', reason: 'Tempo esgotado! Você fez mais pontos.' });
+        } else if (finalScore < finalOppScore) {
+          setEndState({ result: 'loss', reason: 'Tempo esgotado! O oponente fez mais pontos.' });
+        } else {
+          setEndState({ result: 'tie', reason: 'Tempo esgotado! Empate técnico.' });
+        }
       }
-      return;
-    }
+      return remaining;
+    };
 
+    const initial = updateTimer();
+    if (initial <= 0) return;
+
+    // Roda a verificação de maneira mais veloz (ex. 200ms) para refletir o término o mais cravado possível
     const timer = setInterval(() => {
-      setTimeLeft(prev => (prev !== null && prev > 0 ? prev - 1 : 0));
-    }, 1000);
+      const remaining = updateTimer();
+      if (remaining <= 0) clearInterval(timer);
+    }, 200);
 
     return () => clearInterval(timer);
-  }, [gameState, roomConfig, timeLeft, score, opponentScore]);
-
-  const copyRoomLink = () => {
-    const link = `${window.location.origin}/game/${id}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
+  }, [gameState, roomConfig, gameEndTime]);
 
   // Setup do Socket.IO
   useEffect(() => {
-    socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001", {
-      query: { id }
-    });
+    socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001", { query: { id } });
 
     socket.on("connect", () => {
-      // Se eu criei a sala, pego do localstorage
       const localConfig = getRoomConfig(id);
-      if (localConfig) {
-        setRoomConfig(localConfig);
-        if (localConfig.mode === 'time') setTimeLeft(localConfig.timeLimit || 60);
-      }
+      
+      // Imediatamente tenta entrar na sala
+      socket.emit("join_room", {
+        isCreator: !!localConfig,
+        config: localConfig
+      });
     });
+
+    socket.on("error", (msg) => {
+      alert(msg);
+      router.push('/menu');
+    });
+
+    // 🔒 Eventos de Senha
+    socket.on("require_password", () => setShowPasswordPrompt(true));
+    socket.on("wrong_password", () => setPasswordError('Senha incorreta! Tente novamente.'));
 
     socket.on("waiting", () => {
       setGameState('waiting');
       setOpponentConnected(false);
+      setShowPasswordPrompt(false);
     });
 
     socket.on("room_config", (config: RoomConfig) => {
       setRoomConfig(config);
-      if (config.mode === 'time') setTimeLeft(config.timeLimit || 60);
     });
 
-    socket.on("opponent_connected", () => {
+    socket.on("opponent_connected", (data?: { endTime?: number }) => {
       setOpponentConnected(true);
+      setShowPasswordPrompt(false);
       setGameState('playing');
+      
       setOpponentBoard(makeEmpty());
       setOpponentScore(0);
       setScore(0);
@@ -260,8 +278,10 @@ export default function App({ params }: PageProps) {
       const { board: b, keys } = init();
       setBoard(b); setAnimKeys(keys);
 
-      const localConfig = getRoomConfig(id);
-      if (localConfig) socket.emit("set_room_config", localConfig);
+      // Sincroniza o EndTime vindo do servidor
+      if (data?.endTime) {
+        setGameEndTime(data.endTime);
+      }
     });
 
     socket.on("opponent_game_state", (data: { gameboard: Board, score: number }) => {
@@ -295,14 +315,20 @@ export default function App({ params }: PageProps) {
       setGameState('waiting');
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    return () => socket.disconnect();
   }, [id, router]);
+
+  const submitPassword = () => {
+    setPasswordError('');
+    socket.emit("join_room", { isCreator: false, password: roomPassword });
+  };
 
   // Teclado
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Ignorar setas se o modal de senha estiver aberto
+      if (showPasswordPrompt) return;
+
       const MAP: Record<string, 'left' | 'right' | 'up' | 'down'> = {
         ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down'
       };
@@ -310,7 +336,21 @@ export default function App({ params }: PageProps) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [move]);
+  }, [move, showPasswordPrompt]);
+
+  const copyRoomLink = () => {
+    const link = `${window.location.origin}/game/${id}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   const flat = board.flat();
   const opponentFlat = opponentBoard.flat();
@@ -384,6 +424,48 @@ export default function App({ params }: PageProps) {
         @media (max-width: 900px) { .boards-container { flex-direction: column !important; } .player-section { width: 100% !important; } }
       `}</style>
 
+      {/* MODAL DE SENHA */}
+      {showPasswordPrompt && (
+        <div className="overlay-in" style={{
+          position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(9,43,90,0.95), rgba(9,115,138,0.85))',
+            padding: '32px', borderRadius: '20px', border: '1px solid rgba(158,209,183,0.2)',
+            width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '16px'
+          }}>
+            <h2 style={{ color: '#e7d9b4', margin: 0, textAlign: 'center', fontSize: '1.5rem' }}>Sala Protegida</h2>
+            <p style={{ color: '#9ed1b7', margin: 0, textAlign: 'center', fontSize: '0.9rem' }}>
+              Esta sala exige uma senha para entrar.
+            </p>
+            <input
+              type="password"
+              value={roomPassword}
+              onChange={e => setRoomPassword(e.target.value)}
+              placeholder="Digite a senha"
+              style={{
+                padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(158,209,183,0.3)',
+                background: 'rgba(6,22,52,0.6)', color: '#e7d9b4', outline: 'none', fontSize: '1rem'
+              }}
+              onKeyDown={e => e.key === 'Enter' && submitPassword()}
+            />
+            {passwordError && <div style={{ color: '#ff6b6b', fontSize: '0.85rem', textAlign: 'center' }}>{passwordError}</div>}
+            <button
+              onClick={submitPassword}
+              style={{
+                padding: '12px', borderRadius: '10px', background: '#09738a', color: '#e7d9b4',
+                fontWeight: 700, border: 'none', cursor: 'pointer', marginTop: '8px', transition: 'background 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#0a5e7c'}
+              onMouseLeave={e => e.currentTarget.style.background = '#09738a'}
+            >
+              Entrar
+            </button>
+          </div>
+        </div>
+      )}
+
       <div
         className="size-full flex items-center justify-center"
         style={{
@@ -392,7 +474,7 @@ export default function App({ params }: PageProps) {
         }}
         onTouchStart={e => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
         onTouchEnd={e => {
-          if (!touch.current) return;
+          if (!touch.current || showPasswordPrompt) return;
           const dx = e.changedTouches[0].clientX - touch.current.x;
           const dy = e.changedTouches[0].clientY - touch.current.y;
           touch.current = null;

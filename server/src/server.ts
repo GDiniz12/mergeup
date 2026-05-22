@@ -12,10 +12,9 @@ const io = new Server(server, {
   }
 });
 
-// Tipagem da Sala
 interface RoomData {
   players: string[];
-  config: any; // RoomConfig do frontend
+  config: any;
   rematchVotes: string[];
 }
 
@@ -24,87 +23,95 @@ const rooms: { [key: string]: RoomData } = {};
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
-  // Pega o ID da sala pela URL que o frontend passou
   const roomId = socket.handshake.query.id as string;
   if (!roomId) {
     socket.disconnect();
     return;
   }
 
-  // Cria a sala se não existir
-  if (!rooms[roomId]) {
-    rooms[roomId] = { players: [], config: null, rematchVotes: [] };
-  }
-
-  const room = rooms[roomId];
-
-  // Limite de 2 jogadores
-  if (room.players.length >= 2) {
-    socket.emit("error", "A sala já está cheia.");
-    return;
-  }
-
-  room.players.push(socket.id);
-  socket.join(roomId);
-  console.log(`Player ${socket.id} joined room ${roomId}`);
-
-  // Quando os 2 jogadores entrarem, avise a todos na sala para começar
-  if (room.players.length === 2) {
-    io.to(roomId).emit("opponent_connected");
-    // Se o criador da sala já tiver enviado a configuração, repassa ao novo jogador
-    if (room.config) {
-      io.to(roomId).emit("room_config", room.config);
+  // Novo fluxo de entrada controlado
+  socket.on("join_room", (data: { isCreator: boolean, config?: any, password?: string }) => {
+    // Cria a sala se não existir
+    if (!rooms[roomId]) {
+      rooms[roomId] = { players: [], config: null, rematchVotes: [] };
     }
-  } else {
-    socket.emit("waiting", { message: "Aguardando oponente..." });
-  }
+    const room = rooms[roomId];
 
-  // Recebe a configuração da sala do dono e compartilha
-  socket.on("set_room_config", (config) => {
-    if (rooms[roomId]) {
-      rooms[roomId].config = config;
-      socket.to(roomId).emit("room_config", config);
+    // O criador da sala ou de uma revanche sempre manda a config inicial
+    if (data.isCreator && data.config) {
+      room.config = data.config;
+    }
+
+    // Impede mais de 2 jogadores
+    if (room.players.length >= 2 && !room.players.includes(socket.id)) {
+      socket.emit("error", "A sala já está cheia.");
+      return;
+    }
+
+    // Verificação de Senha
+    if (room.config?.hasPassword && !data.isCreator) {
+      if (!data.password) {
+        socket.emit("require_password");
+        return;
+      }
+      if (data.password !== room.config.password) {
+        socket.emit("wrong_password");
+        return;
+      }
+    }
+
+    // Autenticado! Adiciona na sala
+    if (!room.players.includes(socket.id)) {
+      room.players.push(socket.id);
+      socket.join(roomId);
+      console.log(`Player ${socket.id} joined room ${roomId}`);
+    }
+
+    // Se a sala encheu, começa o jogo
+    if (room.players.length === 2) {
+      // Define um timestamp absoluto para o fim da partida (se for por tempo)
+      const timeLimit = room.config?.timeLimit || 60;
+      const endTime = Date.now() + (timeLimit * 1000); 
+
+      // Envia para ambos os jogadores que o oponente conectou e o tempo exato de fim
+      io.to(roomId).emit("opponent_connected", { endTime });
+      
+      if (room.config) {
+        io.to(roomId).emit("room_config", room.config);
+      }
+    } else {
+      socket.emit("waiting", { message: "Aguardando oponente..." });
     }
   });
 
-  // Atualização em tempo real de ambos o jogo e o score
   socket.on("game_state", (data: { gameboard: number[][], score: number }) => {
     socket.to(roomId).emit("opponent_game_state", data);
   });
 
-  // Notifica o outro jogador que alguém ganhou ou perdeu
   socket.on("game_over", (data: { reason: string }) => {
     socket.to(roomId).emit("opponent_game_over", data);
   });
 
-  // Sistema de Revanche
   socket.on("rematch_vote", () => {
     if (rooms[roomId] && !rooms[roomId].rematchVotes.includes(socket.id)) {
       rooms[roomId].rematchVotes.push(socket.id);
-      
-      // Avisa o adversário que o jogador atual quer revanche
       socket.to(roomId).emit("opponent_rematch_vote");
 
-      // Se os dois votaram, cria uma nova sala automaticamente
       if (rooms[roomId].rematchVotes.length === 2) {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let newRoomId = '';
         for (let i = 0; i < 8; i++) newRoomId += chars.charAt(Math.floor(Math.random() * chars.length));
-
-        // Envia o redirecionamento com a mesma configuração de jogo
         io.to(roomId).emit("rematch_start", { newRoomId, config: rooms[roomId].config });
       }
     }
   });
 
-  // Desconexão
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
-    if (rooms[roomId]) {
+    if (rooms[roomId] && rooms[roomId].players.includes(socket.id)) {
       rooms[roomId].players = rooms[roomId].players.filter(id => id !== socket.id);
       socket.to(roomId).emit("opponent_disconnected");
       
-      // Limpa a sala se ficar vazia
       if (rooms[roomId].players.length === 0) {
         delete rooms[roomId];
       }
