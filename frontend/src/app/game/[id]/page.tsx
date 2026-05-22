@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getRoomConfig, type RoomConfig } from '@/utils/generateRoomId';
 
@@ -119,13 +119,11 @@ const tileFont = (v: number): string => {
 let socket: Socket;
 
 interface PageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string}>
 }
 
 export default function App({ params }: PageProps) {
-  const roomId = params.id;
+  const { id } = React.use(params);
   const [board, setBoard]     = useState<Board>(() => init().board);
   const [animKeys, setAnimKeys] = useState<number[]>(() => init().keys);
   const [score, setScore]     = useState(0);
@@ -170,7 +168,7 @@ export default function App({ params }: PageProps) {
   };
 
   const copyRoomLink = () => {
-    const link = `${window.location.origin}/game/${roomId}`;
+    const link = `${window.location.origin}/game/${id}`;
     navigator.clipboard.writeText(link).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -178,13 +176,14 @@ export default function App({ params }: PageProps) {
   };
 
   useEffect(() => {
-    const config = getRoomConfig(roomId);
+    const config = getRoomConfig(id);
     setRoomConfig(config);
-  }, [roomId]);
+    console.log("O ngc da sala é: " + id);
+  }, [id]);
 
   useEffect(() => {
     socket = io(process.env.NEXT_PUBLIC_API_URL, {
-      query: { roomId }
+      query: { id }
     });
 
     socket.on("connect", () => {
@@ -219,7 +218,7 @@ export default function App({ params }: PageProps) {
     return () => {
       socket.disconnect();
     };
-  }, [roomId]);
+  }, [id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -487,7 +486,7 @@ export default function App({ params }: PageProps) {
 
           {roomConfig && (
             <div style={{ color: 'rgba(158,209,183,0.6)', fontSize: '0.75rem', marginTop: 8 }}>
-              Sala: {roomId} • Modo: {roomConfig.mode === 'time' ? `Tempo (${roomConfig.timeLimit}s)` : `Pontuação (${roomConfig.scoreTarget})`}
+              Sala: {id} • Modo: {roomConfig.mode === 'time' ? `Tempo (${roomConfig.timeLimit}s)` : `Pontuação (${roomConfig.scoreTarget})`}
             </div>
           )}
         </div>
