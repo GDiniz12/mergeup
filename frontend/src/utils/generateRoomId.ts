@@ -19,13 +19,15 @@ export interface RoomConfig {
 
 export function saveRoomConfig(config: RoomConfig): void {
   if (typeof window !== 'undefined') {
-    localStorage.setItem(`room_${config.id}`, JSON.stringify(config));
+    // Trocado de localStorage para sessionStorage
+    sessionStorage.setItem(`room_${config.id}`, JSON.stringify(config));
   }
 }
 
 export function getRoomConfig(id: string): RoomConfig | null {
   if (typeof window !== 'undefined') {
-    const data = localStorage.getItem(`room_${id}`);
+    // Trocado de localStorage para sessionStorage
+    const data = sessionStorage.getItem(`room_${id}`);
     return data ? JSON.parse(data) : null;
   }
   return null;

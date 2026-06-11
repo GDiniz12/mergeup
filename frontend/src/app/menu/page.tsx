@@ -1,10 +1,8 @@
 'use client'
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { generateRoomId, saveRoomConfig, type RoomConfig } from "../../utils/generateRoomId";
-import Image from "next/image";
-import mergeLogo from "../../../public/mergeuplogo.png";
 
 export default function Menu() {
   const router = useRouter();
@@ -14,6 +12,38 @@ export default function Menu() {
   const [scoreTarget, setScoreTarget] = useState(10000);
   const [hasPassword, setHasPassword] = useState(false);
   const [password, setPassword] = useState('');
+
+  // Estados para a animação do Protótipo/Demo
+  const [demoTiles, setDemoTiles] = useState([
+    { val: 2, pos: [0, 0] },
+    { val: 2, pos: [0, 1] },
+    { val: 4, pos: [1, 2] },
+    { val: 8, pos: [2, 0] }
+  ]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Simulação simples de movimento para a demo
+      setDemoTiles(prev => {
+        if (prev[0].pos[1] === 1) {
+            return [
+                { val: 4, pos: [0, 0] }, // Fundiu
+                { val: 0, pos: [-1, -1] },
+                { val: 4, pos: [1, 2] },
+                { val: 8, pos: [2, 0] }
+            ];
+        } else {
+            return [
+                { val: 2, pos: [0, 0] },
+                { val: 2, pos: [0, 1] },
+                { val: 4, pos: [1, 2] },
+                { val: 8, pos: [2, 0] }
+            ];
+        }
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleCreateRoom = () => {
     const roomId = generateRoomId();
@@ -26,7 +56,6 @@ export default function Menu() {
       scoreTarget: mode === 'score' ? scoreTarget : undefined,
       createdAt: Date.now(),
     };
-
     saveRoomConfig(config);
     router.push(`/game/${roomId}`);
   };
@@ -34,357 +63,258 @@ export default function Menu() {
   return (
     <>
       <style>{`
-        .btn-glass {
-          background: rgba(9,43,90,0.42);
-          backdrop-filter: blur(14px);
-          border: 1px solid rgba(158,209,183,0.2);
-          color: #e7d9b4;
-          border-radius: 12px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          letter-spacing: 0.04em;
-          padding: 12px 32px;
-          font-size: 1rem;
-        }
-        .btn-glass:hover { 
-          background: rgba(9,115,138,0.45);
-          border-color: rgba(158,209,183,0.35);
+        .menu-container {
+          min-height: 100vh;
+          background-color: var(--color-cream);
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          padding: 40px;
+          gap: 40px;
+          align-items: center;
         }
 
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.6);
+        /* --- LADO ESQUERDO (AÇÃO) --- */
+        .action-side {
+          display: flex;
+          flex-direction: column;
+          gap: 32px;
+          max-width: 500px;
+          justify-self: center;
+        }
+
+        .hero-title {
+          font-size: 6rem;
+          font-weight: 900;
+          line-height: 0.9;
+          text-transform: uppercase;
+          color: #000;
+          margin: 0;
+          text-shadow: 8px 8px 0px var(--color-mint);
+          -webkit-text-stroke: 3px #000;
+        }
+
+        .hero-subtitle {
+          font-size: 1.5rem;
+          font-weight: 700;
+          background: #000;
+          color: var(--color-mint);
+          padding: 10px 20px;
+          display: inline-block;
+          transform: rotate(-2deg);
+          border: var(--border-thick);
+          box-shadow: 6px 6px 0px #000;
+        }
+
+        .btn-create-main {
+          background: var(--color-teal);
+          color: white;
+          border: var(--border-thick);
+          padding: 24px 48px;
+          font-size: 2rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          box-shadow: 10px 10px 0px #000;
+          cursor: pointer;
+          transition: all 0.1s ease;
+          margin-top: 20px;
+        }
+
+        .btn-create-main:hover {
+          transform: translate(4px, 4px);
+          box-shadow: 6px 6px 0px #000;
+        }
+
+        /* --- LADO DIREITO (PROTÓTIPO) --- */
+        .demo-side {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          position: relative;
+        }
+
+        .demo-board {
+          background: #fff;
+          border: var(--border-thick);
+          box-shadow: 15px 15px 0px #000;
+          display: grid;
+          grid-template-columns: repeat(4, 80px);
+          grid-template-rows: repeat(4, 80px);
+          gap: 12px;
+          padding: 20px;
+          transform: perspective(1000px) rotateY(-15deg) rotateX(10deg);
+        }
+
+        .demo-tile {
+          border: 3px solid #000;
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
-          animation: fadeIn 0.2s ease-out;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
-        @keyframes slideUp {
-          from { 
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to { 
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .modal-content {
-          background: linear-gradient(135deg, rgba(9,43,90,0.95) 0%, rgba(9,115,138,0.85) 100%);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(158,209,183,0.2);
-          border-radius: 20px;
-          padding: 32px;
-          max-width: 500px;
-          width: 90%;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-          animation: slideUp 0.3s ease-out;
-        }
-
-        .modal-title {
-          font-size: 1.8rem;
           font-weight: 900;
-          color: #e7d9b4;
-          margin-bottom: 24px;
-          text-align: center;
+          font-size: 1.5rem;
+          transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
-        .form-group {
-          margin-bottom: 20px;
+        .demo-badge {
+          position: absolute;
+          top: -20px;
+          right: 20px;
+          background: var(--color-mint);
+          border: 3px solid #000;
+          padding: 8px 16px;
+          font-weight: 900;
+          transform: rotate(5deg);
+          box-shadow: 4px 4px 0px #000;
+          z-index: 10;
         }
 
-        .form-label {
-          display: block;
-          font-size: 0.9rem;
-          font-weight: 700;
-          color: #9ed1b7;
-          margin-bottom: 8px;
-          letter-spacing: 0.05em;
+        /* --- MODAL (NEO-BRUTALISTA) --- */
+        .modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+          display: flex; align-items: center; justify-content: center; z-index: 1000;
         }
-
-        .mode-selector {
-          display: flex;
-          gap: 12px;
-          margin-bottom: 20px;
+        .modal-content {
+          background: var(--color-mint); border: var(--border-thick);
+          padding: 40px; width: 90%; max-width: 500px;
+          box-shadow: 15px 15px 0px #000;
         }
-
-        .mode-btn {
-          flex: 1;
-          padding: 12px 16px;
-          border: 2px solid rgba(158,209,183,0.2);
-          border-radius: 10px;
-          background: rgba(9,43,90,0.4);
-          color: rgba(158,209,183,0.7);
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          font-size: 0.95rem;
-        }
-
-        .mode-btn.active {
-          border-color: #9ed1b7;
-          background: rgba(9,115,138,0.5);
-          color: #e7d9b4;
-        }
-
+        .form-group { margin-bottom: 24px; }
         .input-field {
-          width: 100%;
-          padding: 10px 14px;
-          border: 1px solid rgba(158,209,183,0.2);
-          border-radius: 10px;
-          background: rgba(9,43,90,0.5);
-          color: #e7d9b4;
-          font-size: 0.95rem;
-          transition: all 0.2s ease;
-          box-sizing: border-box;
+          width: 100%; padding: 15px; border: var(--border-thick);
+          font-weight: bold; box-shadow: 5px 5px 0px #000; outline: none;
         }
 
-        .input-field:focus {
-          outline: none;
-          border-color: #9ed1b7;
-          background: rgba(9,43,90,0.7);
-          box-shadow: 0 0 12px rgba(158,209,183,0.2);
-        }
-
-        .input-field::placeholder {
-          color: rgba(158,209,183,0.4);
-        }
-
-        .checkbox-group {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 12px;
-          background: rgba(9,43,90,0.3);
-          border-radius: 10px;
-          border: 1px solid rgba(158,209,183,0.1);
-          cursor: pointer;
-        }
-
-        .checkbox-group input {
-          cursor: pointer;
-          width: 18px;
-          height: 18px;
-        }
-
-        .modal-buttons {
-          display: flex;
-          gap: 12px;
-          margin-top: 28px;
-        }
-
-        .modal-buttons button {
-          flex: 1;
-          padding: 12px 20px;
-          border: none;
-          border-radius: 10px;
-          font-weight: 700;
-          cursor: pointer;
-          font-size: 0.95rem;
-          transition: all 0.2s ease;
-        }
-
-        .btn-cancel {
-          background: rgba(158,209,183,0.1);
-          color: #9ed1b7;
-          border: 1px solid rgba(158,209,183,0.2);
-        }
-
-        .btn-cancel:hover {
-          background: rgba(158,209,183,0.15);
-        }
-
-        .btn-create {
-          background: linear-gradient(135deg, #09738a, #0a5e7c);
-          color: #e7d9b4;
-          box-shadow: 0 0 20px rgba(9,115,138,0.4);
-        }
-
-        .btn-create:hover {
-          box-shadow: 0 0 30px rgba(9,115,138,0.6);
-          transform: translateY(-2px);
+        @media (max-width: 1000px) {
+          .menu-container { grid-template-columns: 1fr; }
+          .hero-title { font-size: 4rem; }
+          .demo-side { display: none; }
         }
       `}</style>
 
-      <div
-        style={{
-          background: 'linear-gradient(135deg, #092b5a 0%, #09738a 30%, #78a890 58%, #9ed1b7 80%, #e7d9b4 100%)',
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '100%',
-          padding: '20px',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 40 }}>
-          {/* Title */}
-          <div style={{ textAlign: 'center' }}>
-            <div
-              style={{
-                fontSize: '3.5rem',
-                fontWeight: 900,
-                lineHeight: 1,
-                letterSpacing: '-4px',
-                color: '#e7d9b4',
-                textShadow: '0 3px 20px rgba(9,43,90,0.7), 0 0 50px rgba(9,115,138,0.35)',
-                marginBottom: 12,
-              }}
-            >
-              <Image src={mergeLogo} alt='logo do mergeup'/>
-            </div>
-            <div
-              style={{
-                color: 'rgba(158,209,183,0.8)',
-                fontSize: '1rem',
-                letterSpacing: '0.05em',
-                fontWeight: 600,
-              }}
-            >
-              Combine os blocos com um amigo!
-            </div>
+      <div className="menu-container">
+        {/* LADO ESQUERDO: Branding e Ação */}
+        <div className="action-side">
+          <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
+            <h1 className="hero-title">MERGE<br/>UP</h1>
+            <div className="hero-subtitle">2048 MULTIPLAYER</div>
           </div>
+          
+          <p style={{fontSize: '1.2rem', fontWeight: 700, color: '#333'}}>
+             Desafie os seus amigos em tempo real. Una os blocos, multiplique o score e domine o tabuleiro com o estilo Neo-Brutalista.
+          </p>
 
-          {/* Button */}
-          <button onClick={() => setShowModal(true)} className="btn-glass">
-            🎮 Criar Sala
+          <button onClick={() => setShowModal(true)} className="btn-create-main">
+            CRIAR SALA +
           </button>
+        </div>
 
-          {/* Decorative elements */}
-          <div
-            style={{
-              fontSize: '4rem',
-              opacity: 0.4,
-              animation: 'float 3s ease-in-out infinite',
-            }}
-          >
-            🎲 🎲 🎲
+        {/* LADO DIREITO: Protótipo Visual */}
+        <div className="demo-side">
+          <div className="demo-badge">LIVE PREVIEW</div>
+          <div className="demo-board">
+            {/* Grid de fundo */}
+            {Array(16).fill(0).map((_, i) => (
+              <div key={i} style={{background: '#eee', border: '2px solid #ddd'}} />
+            ))}
+            
+            {/* Tiles Animados */}
+            {demoTiles.map((tile, i) => (
+              tile.val > 0 && (
+                <div
+                  key={i}
+                  className="demo-tile"
+                  style={{
+                    gridRow: tile.pos[0] + 1,
+                    gridColumn: tile.pos[1] + 1,
+                    background: tile.val === 2 ? 'var(--color-cream)' : 'var(--color-green)',
+                    boxShadow: '4px 4px 0px #000',
+                    position: 'absolute',
+                    width: '80px',
+                    height: '80px',
+                    margin: '20px' // Compensar padding do board
+                  }}
+                >
+                  {tile.val}
+                </div>
+              )
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Modal */}
+      {/* MODAL DE CONFIGURAÇÃO */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">Criar Nova Sala</div>
-
-            {/* Mode Selection */}
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 style={{fontSize: '2rem', fontWeight: 900, marginBottom: '20px', textTransform: 'uppercase'}}>Configurar Partida</h2>
+            
             <div className="form-group">
-              <label className="form-label">Modo de Jogo</label>
-              <div className="mode-selector">
-                <button
-                  className={`mode-btn ${mode === 'time' ? 'active' : ''}`}
+              <label style={{fontWeight: 900, display: 'block', marginBottom: '10px'}}>MODO</label>
+              <div style={{display: 'flex', gap: '10px'}}>
+                <button 
                   onClick={() => setMode('time')}
-                >
-                  ⏱️ Com Tempo
-                </button>
-                <button
-                  className={`mode-btn ${mode === 'score' ? 'active' : ''}`}
+                  style={{
+                    flex: 1, padding: '10px', border: '3px solid #000', 
+                    background: mode === 'time' ? '#000' : '#fff',
+                    color: mode === 'time' ? '#fff' : '#000',
+                    fontWeight: 'bold', cursor: 'pointer'
+                  }}
+                >TEMPO</button>
+                <button 
                   onClick={() => setMode('score')}
-                >
-                  ⭐ Com Pontuação
-                </button>
+                  style={{
+                    flex: 1, padding: '10px', border: '3px solid #000',
+                    background: mode === 'score' ? '#000' : '#fff',
+                    color: mode === 'score' ? '#fff' : '#000',
+                    fontWeight: 'bold', cursor: 'pointer'
+                  }}
+                >SCORE</button>
               </div>
             </div>
 
-            {/* Time Input */}
-            {mode === 'time' && (
+            {mode === 'time' ? (
               <div className="form-group">
-                <label className="form-label">Tempo Limite (segundos)</label>
-                <input
-                  type="number"
-                  min="30"
-                  max="3600"
-                  value={timeLimit}
-                  onChange={(e) => setTimeLimit(Math.max(30, parseInt(e.target.value) || 30))}
-                  className="input-field"
-                  placeholder="Ex: 60"
-                />
+                <label style={{fontWeight: 900, display: 'block', marginBottom: '10px'}}>TEMPO (SEG)</label>
+                <input type="number" value={timeLimit} onChange={e => setTimeLimit(Number(e.target.value))} className="input-field" />
+              </div>
+            ) : (
+              <div className="form-group">
+                <label style={{fontWeight: 900, display: 'block', marginBottom: '10px'}}>ALVO (PTS)</label>
+                <input type="number" value={scoreTarget} onChange={e => setScoreTarget(Number(e.target.value))} className="input-field" />
               </div>
             )}
 
-            {/* Score Input */}
-            {mode === 'score' && (
-              <div className="form-group">
-                <label className="form-label">Pontuação Alvo</label>
-                <input
-                  type="number"
-                  min="1000"
-                  step="1000"
-                  value={scoreTarget}
-                  onChange={(e) => setScoreTarget(Math.max(1000, parseInt(e.target.value) || 1000))}
-                  className="input-field"
-                  placeholder="Ex: 10000"
-                />
-              </div>
-            )}
-
-            {/* Password Toggle */}
             <div className="form-group">
-              <label
-                className="checkbox-group"
-                style={{ marginBottom: '12px' }}
-              >
-                <input
-                  type="checkbox"
-                  checked={hasPassword}
-                  onChange={(e) => setHasPassword(e.target.checked)}
-                />
-                <span style={{ color: '#9ed1b7' }}>Proteger com senha</span>
-              </label>
+                <label style={{fontWeight: 900, display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer'}}>
+                    <input type="checkbox" checked={hasPassword} onChange={e => setHasPassword(e.target.checked)} style={{width: '20px', height: '20px'}} />
+                    USAR SENHA
+                </label>
             </div>
 
-            {/* Password Input */}
             {hasPassword && (
-              <div className="form-group">
-                <label className="form-label">Senha da Sala</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-field"
-                  placeholder="Digite uma senha"
-                  maxLength={20}
-                />
-              </div>
+                <div className="form-group">
+                    <input type="password" placeholder="Senha da sala" value={password} onChange={e => setPassword(e.target.value)} className="input-field" />
+                </div>
             )}
 
-            {/* Buttons */}
-            <div className="modal-buttons">
-              <button
-                className="btn-cancel"
-                onClick={() => setShowModal(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                className="btn-create"
+            <div style={{display: 'flex', gap: '20px', marginTop: '40px'}}>
+              <button 
                 onClick={handleCreateRoom}
-              >
-                Criar Sala
-              </button>
+                style={{
+                    flex: 2, background: 'var(--color-teal)', color: '#fff', border: '3px solid #000',
+                    padding: '15px', fontWeight: '900', fontSize: '1.2rem', boxShadow: '5px 5px 0px #000', cursor: 'pointer'
+                }}
+              >LANÇAR SALA</button>
+              <button 
+                onClick={() => setShowModal(false)}
+                style={{
+                    flex: 1, background: '#fff', border: '3px solid #000',
+                    padding: '15px', fontWeight: '900', cursor: 'pointer'
+                }}
+              >SAIR</button>
             </div>
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-20px); }
-        }
-      `}</style>
     </>
   );
 }
